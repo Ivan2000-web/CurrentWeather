@@ -63,6 +63,101 @@ export default function WeatherScreen({ weatherData, onBack }) {
     return date.toLocaleDateString('ru-RU', { weekday: 'long' });
   };
 
+  // Функция для определения времени начала дождя
+    // Функция для определения времени начала дождя
+  const getRainStartTime = (dayData) => {
+    if (!dayData.hourly || !Array.isArray(dayData.hourly)) {
+      return null;
+    }
+    
+    // Ищем первый час с вероятностью дождя больше 30%
+    for (let i = 0; i < dayData.hourly.length; i++) {
+      const hour = dayData.hourly[i];
+      const rainChance = parseInt(hour.chanceofrain) || 0;
+      
+      if (rainChance > 30) {
+        const time = String(hour.time).padStart(2, '0') + ':00';
+        return { 
+          time, 
+          chance: rainChance,
+          description: hour.weatherDesc[0]?.value || 'Дождь'
+        };
+      }
+    }
+    
+    // Если не нашли конкретное время, но есть общая вероятность дождя
+    const maxRainChance = Math.max(...dayData.hourly.map(h => parseInt(h.chanceofrain) || 0));
+    if (maxRainChance > 10) {
+      return { 
+        time: null, 
+        chance: maxRainChance,
+        description: 'Возможен дождь'
+      };
+    }
+    
+    return null;
+  };
+
+  // Функция для получения информации о дожде на сегодня
+  const getTodayRainInfo = () => {
+    if (!forecast || forecast.length === 0) return null;
+    
+    const today = forecast[0];
+    const rainInfo = getRainStartTime(today);
+    
+    if (rainInfo) {
+      if (rainInfo.time) {
+        return `${rainInfo.description} с ${rainInfo.time} (${rainInfo.chance}%)`;
+      } else {
+        return `${rainInfo.description} (до ${rainInfo.chance}%)`;
+      }
+    }
+    
+    return null;
+  };
+
+  // Функция для получения детальной информации о дожде для прогноза
+  const getForecastRainInfo = (dayData) => {
+    const rainInfo = getRainStartTime(dayData);
+    
+    if (rainInfo) {
+      if (rainInfo.time) {
+        return {
+          text: `Дождь с ${rainInfo.time} (${rainInfo.chance}%)`,
+          hasRain: true,
+          icon: 'rainy'
+        };
+      } else {
+        return {
+          text: `Возможен дождь (${rainInfo.chance}%)`,
+          hasRain: true,
+          icon: 'rainy-outline'
+        };
+      }
+    }
+    
+    return {
+      text: 'Без осадков',
+      hasRain: false,
+      icon: 'sunny'
+    };
+  };
+
+  // Функция для получения почасового прогноза дождя
+  const getHourlyRainForecast = (dayData) => {
+    if (!dayData.hourly || !Array.isArray(dayData.hourly)) {
+      return [];
+    }
+    
+    return dayData.hourly
+      .filter(hour => hour.chanceofrain > 20)
+      .map(hour => ({
+        time: String(hour.time).padStart(2, '0') + ':00',
+        chance: hour.chanceofrain,
+        description: hour.weatherDesc[0]?.value || 'Дождь'
+      }));
+  };
+  
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -94,6 +189,13 @@ export default function WeatherScreen({ weatherData, onBack }) {
               <View style={styles.tempDetails}>
                 <Text style={styles.feelsLike}>Ощущается как {current.FeelsLikeC}°</Text>
                 <Text style={styles.weatherDescription}>{current.weatherDesc[0].value}</Text>
+                {/* Информация о дожде */}
+                {getTodayRainInfo() && (
+                  <View style={styles.rainInfo}>
+                    <Ionicons name="rainy" size={16} color="#ffffff" />
+                    <Text style={styles.rainText}>{getTodayRainInfo()}</Text>
+                  </View>
+                )}
               </View>
             </View>
             <View style={styles.weatherIconSection}>
@@ -137,60 +239,69 @@ export default function WeatherScreen({ weatherData, onBack }) {
         {/* Прогноз на 3 дня */}
         <View style={styles.forecastSection}>
           <Text style={styles.forecastTitle}>Прогноз на 3 дня</Text>
-          {forecast.slice(0, 3).map((day, index) => (
-            <View key={index} style={styles.forecastCard}>
-              <View style={styles.forecastHeader}>
-                <View style={styles.forecastDateSection}>
-                  <Text style={styles.forecastDay}>{getDayName(day.date, index)}</Text>
-                  <Text style={styles.forecastDate}>{formatDate(day.date)}</Text>
-                </View>
-                
-                <View style={styles.forecastWeather}>
-                  <Ionicons 
-                    name={getWeatherIcon(day.hourly[0]?.weatherDesc[0]?.value || 'ясно')} 
-                    size={32} 
-                    color="#60a5fa" 
-                  />
-                  <View style={styles.forecastTemp}>
-                    <Text style={styles.maxTemp}>{day.maxtempC}°</Text>
-                    <Text style={styles.tempSeparator}>/</Text>
-                    <Text style={styles.minTemp}>{day.mintempC}°</Text>
+          {forecast.slice(0, 3).map((day, index) => {
+            const rainInfo = getForecastRainInfo(day);
+            const hourlyRain = getHourlyRainForecast(day);
+            
+            return (
+              <View key={index} style={styles.forecastCard}>
+                <View style={styles.forecastHeader}>
+                  <View style={styles.forecastDateSection}>
+                    <Text style={styles.forecastDay}>{getDayName(day.date, index)}</Text>
+                    <Text style={styles.forecastDate}>{formatDate(day.date)}</Text>
+                  </View>
+                  
+                  <View style={styles.forecastWeather}>
+                    <Ionicons 
+                      name={getWeatherIcon(day.hourly[0]?.weatherDesc[0]?.value || 'ясно')} 
+                      size={32} 
+                      color="#60a5fa" 
+                    />
+                    <View style={styles.forecastTemp}>
+                      <Text style={styles.maxTemp}>{day.maxtempC}°</Text>
+                      <Text style={styles.tempSeparator}>/</Text>
+                      <Text style={styles.minTemp}>{day.mintempC}°</Text>
+                    </View>
                   </View>
                 </View>
+                
+                <View style={styles.forecastDetails}>
+                  <View style={styles.forecastDetailItem}>
+                    <Ionicons name="water-outline" size={16} color="#93c5fd" />
+                    <Text style={styles.forecastDetailText}>
+                      Влажность: {day.hourly[0]?.humidity || 'N/A'}%
+                    </Text>
+                  </View>
+                  
+                  {/* Информация о дожде с временем */}
+                  <View style={styles.forecastDetailItem}>
+                    <Ionicons name={rainInfo.icon} size={16} color={rainInfo.hasRain ? "#60a5fa" : "#93c5fd"} />
+                    <Text style={styles.forecastDetailText}>
+                      {rainInfo.text}
+                    </Text>
+                  </View>
+                  
+                  {/* Почасовой прогноз дождя */}
+                  {hourlyRain.length > 0 && (
+                    <View style={styles.hourlyRainContainer}>
+                    </View>
+                  )}
+                </View>
               </View>
-              
-              <View style={styles.forecastDetails}>
-                <View style={styles.forecastDetailItem}>
-                  <Ionicons name="water-outline" size={16} color="#93c5fd" />
-                  <Text style={styles.forecastDetailText}>
-                    {day.hourly[0]?.humidity || 'N/A'}%
-                  </Text>
-                </View>
-                <View style={styles.forecastDetailItem}>
-                  <Ionicons name="rainy-outline" size={16} color="#93c5fd" />
-                  <Text style={styles.forecastDetailText}>
-                    {day.hourly[0]?.chanceofrain || 0}%
-                  </Text>
-                </View>
-                <View style={styles.forecastDetailItem}>
-                  <Text style={styles.forecastWeatherDesc}>
-                    {day.hourly[0]?.weatherDesc[0]?.value || 'Ясно'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
-    paddingTop: 20, // Увеличиваем отступ сверху
+    paddingTop: 20,
   },
   errorContainer: {
     flex: 1,
@@ -202,8 +313,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 20, // Увеличиваем вертикальные отступы
-    paddingTop: 30, // Увеличиваем дополнительный отступ сверху
+    paddingVertical: 20,
+    paddingTop: 30,
     backgroundColor: '#1e293b',
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
@@ -399,5 +510,15 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     textAlign: 'center',
     marginTop: 32,
+  },
+  rainInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  rainText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#ffffff',
   },
 });

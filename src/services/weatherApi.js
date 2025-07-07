@@ -74,9 +74,9 @@ export const getWeatherData = async (city) => {
 
     const { latitude, longitude, name } = geocodingData.results[0];
 
-    // Получаем данные о погоде
+    // Получаем данные о погоде с почасовыми данными
     const weatherResponse = await fetch(
-      `${WEATHER_API_BASE_URL}/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code,surface_pressure,visibility,apparent_temperature,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=3`,
+      `${WEATHER_API_BASE_URL}/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code,surface_pressure,visibility,apparent_temperature,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code,relative_humidity_2m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=3`,
       {
         method: 'GET',
         headers: {
@@ -92,7 +92,7 @@ export const getWeatherData = async (city) => {
 
     const weatherData = await weatherResponse.json();
     
-    // Преобразуем данные в удобный формат
+    // Преобразуем данные в удобный формат с почасовыми данными
     const transformedData = {
       current_condition: [{
         temp_C: Math.round(weatherData.current.temperature_2m),
@@ -103,16 +103,32 @@ export const getWeatherData = async (city) => {
         windSpeed: Math.round(weatherData.current.wind_speed_10m),
         weatherDesc: [{ value: getWeatherDescription(weatherData.current.weather_code) }],
       }],
-      weather: weatherData.daily.time.slice(0, 3).map((date, index) => ({
-        date: date,
-        maxtempC: Math.round(weatherData.daily.temperature_2m_max[index]),
-        mintempC: Math.round(weatherData.daily.temperature_2m_min[index]),
-        hourly: [{
-          weatherDesc: [{ value: getWeatherDescription(weatherData.daily.weather_code[index]) }],
-          humidity: weatherData.current.relative_humidity_2m,
-          chanceofrain: weatherData.daily.precipitation_probability_max[index] || 0,
-        }],
-      })),
+      weather: weatherData.daily.time.slice(0, 3).map((date, dayIndex) => {
+        // Получаем почасовые данные для этого дня (24 часа)
+        const dayStart = dayIndex * 24;
+        const dayEnd = dayStart + 24;
+        const hourlyData = [];
+        
+        for (let hour = dayStart; hour < dayEnd && hour < weatherData.hourly.time.length; hour++) {
+          const hourTime = new Date(weatherData.hourly.time[hour]);
+          hourlyData.push({
+            time: hourTime.getHours(),
+            temperature: Math.round(weatherData.hourly.temperature_2m[hour]),
+            precipitation_probability: weatherData.hourly.precipitation_probability[hour] || 0,
+            weather_code: weatherData.hourly.weather_code[hour],
+            humidity: weatherData.hourly.relative_humidity_2m[hour],
+            weatherDesc: [{ value: getWeatherDescription(weatherData.hourly.weather_code[hour]) }],
+            chanceofrain: weatherData.hourly.precipitation_probability[hour] || 0
+          });
+        }
+
+        return {
+          date: date,
+          maxtempC: Math.round(weatherData.daily.temperature_2m_max[dayIndex]),
+          mintempC: Math.round(weatherData.daily.temperature_2m_min[dayIndex]),
+          hourly: hourlyData,
+        };
+      }),
       location: {
         name: name,
         latitude: latitude,
